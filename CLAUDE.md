@@ -10,7 +10,9 @@ API server and no chat feature — the entire backend is Supabase (Postgres + Au
 called directly from the browser via the Supabase JS client. Keep that framing in mind when
 picking up work here.
 
-Live at: https://delsport-booking-system.netlify.app
+Live at: https://delsportukltd.github.io/delsport-booking-system/ (migrated from Netlify in
+August 2026 after the Netlify team account hit its usage-credit limit and blocked new deploys —
+see git history for the old `netlify.toml`-based setup if reviving that path)
 
 ## 1. Tech stack
 
@@ -25,8 +27,15 @@ Live at: https://delsport-booking-system.netlify.app
 - **xlsx** — CSV/Excel import (members, bookings) and export (members to Excel)
 - **lucide-react** — icon set
 - **recharts** — Reports page charts (revenue trend, bar charts)
-- **Netlify** — hosting, deployed via `netlify deploy --prod --dir dist` (no CI pipeline, deploys
-  are manual)
+- **GitHub Pages** — hosting, served from the `Delsportukltd/delsport-booking-system` repo (public,
+  required for Pages on a free org plan — no member/booking/invoice data lives in the repo, only
+  app source). Deploys automatically via the `.github/workflows/deploy.yml` GitHub Actions
+  workflow on every push to `main` (`VITE_SUPABASE_URL`/`VITE_SUPABASE_ANON_KEY` are set as repo
+  secrets, injected at build time). `vite.config.js` sets `base: "/delsport-booking-system/"` to
+  match the Pages sub-path — any hardcoded root-absolute asset path referenced from JS (not just
+  `index.html`, which Vite rewrites automatically) needs `import.meta.env.BASE_URL` prefixed
+  instead, or it will 404 under this sub-path (bit us once with the trust-logo image paths used
+  in invoice PDF generation)
 - No CSS framework — everything is inline `style={{}}` objects against a shared color/token
   object (`C`), plus one `<style>` block injected in `BookingApp` for things inline styles can't
   do (media queries, `@font-face`, `:has()` selectors)
