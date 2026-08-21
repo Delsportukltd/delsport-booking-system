@@ -1,0 +1,19 @@
+node_modules
+dist
+.env
+.env.local
+
+# Local Netlify folder
+.netlify
+
+# Local Claude Code settings (machine-specific, not project config)
+.claude
+
+# macOS
+.DS_Store
+
+# Personal/business files that live in this iCloud folder alongside the app
+# but are not part of the project — never commit real member or invoice data
+*.numbers
+delsport-invoices-*/
+Claude Code
