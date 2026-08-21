@@ -1629,18 +1629,35 @@ function Bookings({ sites, facilities, bookings, setBookings, facilityById, site
       setPrefill(null);
       return;
     }
-    // new booking(s) — handle weekly series or an explicit set of picked dates
-    const siteId = facilityById[data.facilityId]?.siteId;
-    const isBlackedOut = (d) => !!findBlackout(blackouts, { facilityId: data.facilityId, siteId, date: d, startTime: data.startTime, endTime: data.endTime });
+    // new booking(s) — handle weekly series, an explicit set of picked dates,
+    // and/or multiple facilities booked together (combinable with picked dates,
+    // one group of facilities per date — see BookingModal's extraFacilityOptions)
+    const isBlackedOutFor = (fid, d) => {
+      const siteId = facilityById[fid]?.siteId;
+      return !!findBlackout(blackouts, { facilityId: fid, siteId, date: d, startTime: data.startTime, endTime: data.endTime });
+    };
 
     const newBookings = [];
     const skippedDates = [];
     const multiFacilityIds = data.facilityIds && data.facilityIds.length > 1 ? [...new Set(data.facilityIds)] : null;
-    if (multiFacilityIds) {
-      // One real booking row per facility (so each shows up on its own
-      // calendar/grid), linked by groupId so they act as one event —
-      // only the first leg carries the price, so totals elsewhere don't
-      // triple-count the same money across facilities.
+    if (multiFacilityIds && data.repeatMode === "dates" && data.multiDates?.length > 0) {
+      // Multiple facilities, each booked on every picked date — one row per
+      // facility per date, grouped per date (so cancelling/deleting one date
+      // only affects that date's facilities, not the whole series) and linked
+      // by a shared recurringId across the series for the "repeat" indicator.
+      const recurringId = uid();
+      [...data.multiDates].sort().forEach((d) => {
+        if (multiFacilityIds.some((fid) => isBlackedOutFor(fid, d))) { skippedDates.push(d); return; }
+        const groupId = uid();
+        multiFacilityIds.forEach((fid, i) => {
+          newBookings.push({ ...data, id: uid(), facilityId: fid, date: d, price: i === 0 ? data.price : 0, groupId, recurringId });
+        });
+      });
+    } else if (multiFacilityIds) {
+      // One-off multi-facility booking — one real booking row per facility (so
+      // each shows up on its own calendar/grid), linked by groupId so they act
+      // as one event — only the first leg carries the price, so totals
+      // elsewhere don't multiply-count the same money across facilities.
       const groupId = uid();
       multiFacilityIds.forEach((fid, i) => {
         newBookings.push({ ...data, id: uid(), facilityId: fid, price: i === 0 ? data.price : 0, groupId });
@@ -1649,14 +1666,14 @@ function Bookings({ sites, facilities, bookings, setBookings, facilityById, site
       const recurringId = uid();
       let d = data.date;
       while (d <= data.repeatUntil) {
-        if (isBlackedOut(d)) skippedDates.push(d);
+        if (isBlackedOutFor(data.facilityId, d)) skippedDates.push(d);
         else newBookings.push({ ...data, id: uid(), date: d, recurringId });
         d = addDays(d, 7);
       }
     } else if (data.repeatMode === "dates" && data.multiDates?.length > 0) {
       const recurringId = uid();
       [...data.multiDates].sort().forEach((d) => {
-        if (isBlackedOut(d)) skippedDates.push(d);
+        if (isBlackedOutFor(data.facilityId, d)) skippedDates.push(d);
         else newBookings.push({ ...data, id: uid(), date: d, recurringId });
       });
     } else {
@@ -2333,10 +2350,10 @@ function BookingModal({ initial, prefill, facilities, siteById, members, setMemb
   const selectedFacility = facilities.find((f) => f.id === form.facilityId);
   const capacity = selectedFacility?.capacity || 1;
   const requestedSpaces = Math.min(Number(form.spaces) || 1, capacity);
-  // Only facilities at the same site as the primary one, and only for a
-  // one-off booking — combining this with weekly-repeat gets complicated
-  // fast, so it's kept out of scope for now.
-  const extraFacilityOptions = !initial && form.repeatMode === "none" && selectedFacility
+  // Only facilities at the same site as the primary one. Combinable with a one-off
+  // booking or a set of picked dates (one group per date); weekly-repeat is excluded
+  // — a multi-facility series running for months gets complicated fast.
+  const extraFacilityOptions = !initial && (form.repeatMode === "none" || form.repeatMode === "dates") && selectedFacility
     ? allowedFacilities.filter((f) => f.siteId === selectedFacility.siteId && f.id !== form.facilityId)
     : [];
 
@@ -2423,9 +2440,10 @@ function BookingModal({ initial, prefill, facilities, siteById, members, setMemb
       hirerContact: selectedMember?.email || selectedMember?.phone || "",
       company: selectedMember?.company || "",
       emailConfirmation: !initial && form.emailConfirmation && !!selectedMember?.email,
-      // extra facilities only apply to a one-off booking — never let a stale
-      // selection from before switching repeat mode leak into a recurring save
-      facilityIds: form.repeatMode === "none" ? [form.facilityId, ...form.extraFacilityIds] : [form.facilityId],
+      // extra facilities apply to a one-off booking or a picked-dates series, but
+      // never to weekly-repeat — don't let a stale selection from before switching
+      // repeat mode leak into a weekly save
+      facilityIds: form.repeatMode === "weekly" ? [form.facilityId] : [form.facilityId, ...form.extraFacilityIds],
     });
   }
 
@@ -2505,7 +2523,7 @@ function BookingModal({ initial, prefill, facilities, siteById, members, setMemb
 
       {extraFacilityOptions.length > 0 && (
         <div style={{ background: "#F8FAFC", border: `1px solid ${C.line}`, borderRadius: 10, padding: 12, marginBottom: 14 }}>
-          <div style={{ fontSize: 11.5, fontWeight: 700, color: C.mute, textTransform: "uppercase", marginBottom: 8 }}>Also book at the same time (same member, date &amp; time)</div>
+          <div style={{ fontSize: 11.5, fontWeight: 700, color: C.mute, textTransform: "uppercase", marginBottom: 8 }}>Also book at the same time (same member &amp; time{form.repeatMode === "dates" ? ", on each date picked below" : ""})</div>
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             {extraFacilityOptions.map((f) => (
               <label key={f.id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: C.ink, cursor: "pointer" }}>
@@ -2516,7 +2534,7 @@ function BookingModal({ initial, prefill, facilities, siteById, members, setMemb
           </div>
           {form.extraFacilityIds.length > 0 && (
             <div style={{ fontSize: 12, color: C.mute, marginTop: 8 }}>
-              The price above covers all {form.extraFacilityIds.length + 1} facilities together — it'll show as one line on the invoice ({[selectedFacility?.name, ...form.extraFacilityIds.map((id) => facilities.find((f) => f.id === id)?.name)].filter(Boolean).join(" + ")}), and each facility still shows the booking on its own calendar.
+              The price above covers all {form.extraFacilityIds.length + 1} facilities together{form.repeatMode === "dates" ? ", per date" : ""} — it'll show as one line on the invoice ({[selectedFacility?.name, ...form.extraFacilityIds.map((id) => facilities.find((f) => f.id === id)?.name)].filter(Boolean).join(" + ")}), and each facility still shows the booking on its own calendar.
             </div>
           )}
         </div>
@@ -2601,7 +2619,7 @@ function BookingModal({ initial, prefill, facilities, siteById, members, setMemb
               ["weekly", "Same day & time, weekly"],
               ["dates", "Pick specific dates"],
             ].map(([v, label]) => {
-              const lockedOut = v !== "none" && form.extraFacilityIds.length > 0;
+              const lockedOut = v === "weekly" && form.extraFacilityIds.length > 0;
               return (
                 <button key={v} type="button" disabled={lockedOut} onClick={() => setForm((f) => ({ ...f, repeatMode: v }))} style={{
                   padding: "7px 12px", borderRadius: 8, fontSize: 12.5, fontWeight: 700, cursor: lockedOut ? "not-allowed" : "pointer",
@@ -2614,7 +2632,7 @@ function BookingModal({ initial, prefill, facilities, siteById, members, setMemb
           </div>
           {form.extraFacilityIds.length > 0 && (
             <div style={{ fontSize: 12, color: C.mute, marginTop: -8, marginBottom: 12 }}>
-              Repeating isn't available for a multi-facility booking — remove the extra facilities above first.
+              Weekly repeat isn't available for a multi-facility booking — remove the extra facilities above first. Picking specific dates is fine.
             </div>
           )}
 

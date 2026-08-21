@@ -132,8 +132,17 @@ bookings). Only the first row in the group carries the actual price; the others 
 revenue sums elsewhere never double-count. `bookingsInGroup()` finds all rows in a group;
 `buildDocumentRows()` collapses a group back into one combined line (e.g. "Sports Hall +
 Classroom") for invoices/confirmations. Cancel/delete on any one leg cascades to the whole group
-(see `setStatus`/`remove`/`removeSelected` in the `Bookings` component). Scoped to one-off
-bookings only — not combined with weekly-repeat, to avoid combinatorial edge cases.
+(see `setStatus`/`remove`/`removeSelected` in the `Bookings` component).
+
+Combinable with a one-off booking or a "pick specific dates" series (**not** with weekly-repeat —
+a multi-facility series running for months was judged too complicated, so `BookingModal` disables
+the weekly-repeat button whenever extra facilities are selected). When combined with picked
+dates, each date gets its *own* `groupId` (so cancelling one date's booking doesn't touch the
+other dates), and all dates additionally share one `recurringId` linking the whole series — see
+the `multiFacilityIds && data.repeatMode === "dates"` branch in `Bookings`' `save()`. This is
+also why `BookingModal`'s `handleSave` hard-drops `extraFacilityIds` whenever repeat mode is
+`"weekly"`: without that, a stale selection from before switching modes could otherwise slip
+through and silently create the wrong bookings (this happened once — see git history).
 
 **Delete confirmations, everywhere** — every delete action in the app (single or bulk) routes
 through `ConfirmDeleteModal` before anything is actually removed. This was added deliberately
